@@ -15,10 +15,10 @@ public:
     size_t size() const;
 
 private:
-    mutable std::mutex mu;
-    std::vector<std::vector<uint8_t>> items;
-    size_t max_size_bytes;
-    size_t cap;
+    mutable std::mutex mu_;
+    std::vector<std::vector<uint8_t>> items_;
+    size_t max_size_bytes_;
+    size_t cap_;
 };
 
 #endif //FUZZ_CORPUS_H

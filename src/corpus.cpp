@@ -6,8 +6,8 @@
 
 #include "logger.h"
 
-Corpus::Corpus(const size_t max_size_bytes, const size_t max_items) : max_size_bytes(
-        max_size_bytes), cap(max_items) {}
+Corpus::Corpus(const size_t max_size_bytes, const size_t max_items) : max_size_bytes_(
+        max_size_bytes), cap_(max_items) {}
 
 bool Corpus::load_dir(const std::string& dir) {
     size_t n = 0, skipped = 0;
@@ -20,13 +20,13 @@ bool Corpus::load_dir(const std::string& dir) {
             continue;
         }
         std::ifstream ifs(p.path(), std::ios::binary);
-        std::vector<uint8_t> b((std::istreambuf_iterator<char>(ifs)), {});
+        std::vector<uint8_t> b((std::istreambuf_iterator(ifs)), {});
         if (b.empty()) {
             skipped++;
             continue;
         }
-        if (b.size() > max_size_bytes) {
-            b.resize(max_size_bytes);
+        if (b.size() > max_size_bytes_) {
+            b.resize(max_size_bytes_);
         }
         add(b);
         n++;
@@ -42,23 +42,23 @@ bool Corpus::load_dir(const std::string& dir) {
 }
 
 void Corpus::add(const std::vector<uint8_t>& item) {
-    std::lock_guard lk(mu);
-    if (items.size() >= cap) {
+    std::lock_guard lk(mu_);
+    if (items_.size() >= cap_) {
         return;
     }
-    items.push_back(item);
+    items_.push_back(item);
 }
 
 std::vector<uint8_t> Corpus::pick() {
-    std::lock_guard lk(mu);
-    static thread_local std::mt19937_64 rng{
+    std::lock_guard lk(mu_);
+    thread_local std::mt19937_64 rng{
         0x1234ULL ^ pthread_self()
     };
-    std::uniform_int_distribution<size_t> di(0, items.size() - 1);
-    return items[di(rng)];
+    std::uniform_int_distribution<size_t> di(0, items_.size() - 1);
+    return items_[di(rng)];
 }
 
 size_t Corpus::size() const {
-    std::lock_guard lk(mu);
-    return items.size();
+    std::lock_guard lk(mu_);
+    return items_.size();
 }

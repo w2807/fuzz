@@ -18,9 +18,9 @@ public:
                                    const std::vector<uint8_t>& b);
 
 private:
-    std::mt19937_64 rng;
-    size_t max_size;
-    const Dict* dict;
+    std::mt19937_64 rng_;
+    size_t max_size_;
+    const Dict* dict_;
 
     std::vector<uint8_t> rand_bytes(size_t n);
     std::vector<uint8_t> flip_bits(const std::vector<uint8_t>& d);

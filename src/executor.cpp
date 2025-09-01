@@ -69,7 +69,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
     std::string tmpPath;
     int tmpFd = -1;
 
-    auto cleanup_tmp = [&]() {
+    auto cleanup_tmp = [&] {
         if (tmpFd >= 0) {
             close(tmpFd);
             tmpFd = -1;
@@ -186,7 +186,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
         close(err_pipe[0]);
         close(err_pipe[1]);
 
-        set_rlimits(cfg.mem_mb);
+        set_rlimits(cfg_.mem_mb);
 
         std::vector<char*> av;
         av.reserve(args.size() + 1);
@@ -232,7 +232,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
     };
 
     for (;;) {
-        struct pollfd pfds[3];
+        pollfd pfds[3];
         int nfds = 0;
         if (in_pipe[1] != -1) {
             pfds[nfds++] = pollfd{in_pipe[1], POLLOUT, 0};
@@ -241,9 +241,9 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
         pfds[nfds++] = pollfd{err_pipe[0], POLLIN, 0};
 
         int elapsed = static_cast<int>(now_mono_ms() - start);
-        int rem = std::max(1, cfg.timeout_ms - elapsed);
+        int rem = std::max(1, cfg_.timeout_ms - elapsed);
 
-        if (int pr = ::poll(pfds, nfds, rem); pr < 0 && errno == EINTR) {
+        if (int pr = poll(pfds, nfds, rem); pr < 0 && errno == EINTR) {
             continue;
         }
 
@@ -251,7 +251,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
         drain(err_pipe[0], errS);
 
         if (use_stdin && in_pipe[1] != -1 && in_off < data.size()) {
-            ssize_t w = ::write(in_pipe[1], data.data() + in_off,
+            ssize_t w = write(in_pipe[1], data.data() + in_off,
                                 data.size() - in_off);
             if (w > 0) {
                 in_off += static_cast<size_t>(w);
@@ -275,7 +275,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
             break;
         }
 
-        if (static_cast<int>(now_mono_ms() - start) >= cfg.timeout_ms) {
+        if (static_cast<int>(now_mono_ms() - start) >= cfg_.timeout_ms) {
             R.timed_out = true;
             kill(pid, SIGKILL);
             waitpid(pid, nullptr, 0);

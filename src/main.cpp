@@ -18,7 +18,7 @@
 
 static void usage(const char* prog) {
     std::fprintf(stderr,
-                 "Usage: %s --target \"./prog @@\" --seeds dir --out dir [opts]\n"
+                 "Usage: %s --target \"./prog @@/{stdin}\" --seeds dir --out dir [opts]\n"
                  "  --iterations N        total testcases (default 10000)\n"
                  "  --threads N           parallel workers (default 1)\n"
                  "  --timeout-ms N        per-run timeout (default 1000)\n"
@@ -30,69 +30,83 @@ static void usage(const char* prog) {
                  prog);
 }
 
-bool parse_options(int argc, char** argv, Options& o, std::string& err) {
+bool parse_options(const int argc, char** argv, Options& o, std::string& err) {
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
-        auto need = [&](int k)-> bool {
+        auto need = [&](const int k) {
             if (i + k >= argc) {
                 err = "missing value for " + a;
                 return false;
             }
             return true;
         };
+
         if (a == "--target") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.target = argv[++i];
         } else if (a == "--seeds") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.seeds_dir = argv[++i];
         } else if (a == "--out") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.out_dir = argv[++i];
         } else if (a == "--iterations") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.iterations = std::stoi(argv[++i]);
         } else if (a == "--threads") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.threads = std::stoi(argv[++i]);
         } else if (a == "--timeout-ms") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.timeout_ms = std::stoi(argv[++i]);
         } else if (a == "--mem-mb") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.mem_mb = std::stoi(argv[++i]);
         } else if (a == "--max-size") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.max_size = (size_t)std::stoul(argv[++i]);
         } else if (a == "--dict") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.dict_path = argv[++i];
         } else if (a == "--seed") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             o.seed = static_cast<uint64_t>(std::stoull(argv[++i]));
         } else if (a == "--allowed-exits") {
-            if (!need(1))
+            if (!need(1)) {
                 return false;
+            }
             std::string v = argv[++i];
             size_t pos = 0;
             while (pos < v.size()) {
                 const size_t c = v.find(',', pos);
                 std::string tok = v.substr(
                     pos, c == std::string::npos ? v.size() - pos : c - pos);
-                if (!tok.empty())
+                if (!tok.empty()) {
                     o.allowed_exits.insert(std::stoi(tok));
-                if (c == std::string::npos)
+                }
+                if (c == std::string::npos) {
                     break;
+                }
                 pos = c + 1;
             }
         } else {
@@ -104,8 +118,9 @@ bool parse_options(int argc, char** argv, Options& o, std::string& err) {
         err = "missing required args";
         return false;
     }
-    if (o.threads < 1)
+    if (o.threads < 1) {
         o.threads = 1;
+    }
     return true;
 }
 
@@ -117,7 +132,7 @@ struct Shared {
     std::atomic<uint64_t> crashes{0};
     std::atomic<uint64_t> saved{0};
 
-    explicit Shared(size_t max_size) :
+    explicit Shared(const size_t max_size) :
         corpus(max_size) {}
 };
 
@@ -129,7 +144,14 @@ static void save_crash(const std::string& out_dir, uint64_t id,
     std::string bin = join_path(out_dir, base + ".bin");
     std::string meta = join_path(out_dir, base + ".meta.txt");
     std::ofstream of(bin, std::ios::binary);
-    of.write(reinterpret_cast<const char*>(buf.data()), buf.size());
+    const size_t sz = buf.size();
+
+    if (sz > static_cast<size_t>(std::numeric_limits<std::streamsize>::max())) {
+        logx::warn("buffer too large");
+        return;
+    }
+    of.write(reinterpret_cast<const char*>(buf.data()),
+             static_cast<std::streamsize>(sz));
     std::ofstream mf(meta);
     mf << "time: " << now_iso8601() << "\n";
     mf << "reason: " << C.reason << "\n";
@@ -147,8 +169,8 @@ static bool preflight_target(const std::vector<std::string>& argv_t,
     }
     const std::string& exe = argv_t[0];
 
-    auto is_exec = [](const std::string& p)-> bool {
-        return ::access(p.c_str(), X_OK) == 0;
+    auto is_exec = [](const std::string& p) {
+        return access(p.c_str(), X_OK) == 0;
     };
 
     if (exe.find('/') != std::string::npos) {
@@ -176,8 +198,9 @@ static bool preflight_target(const std::vector<std::string>& argv_t,
                     break;
                 }
             }
-            if (sep == std::string::npos)
+            if (sep == std::string::npos) {
                 break;
+            }
             pos = sep + 1;
         }
         if (!found) {
@@ -190,11 +213,11 @@ static bool preflight_target(const std::vector<std::string>& argv_t,
 
 int main(int argc, char** argv) {
     Options opt;
-    std::string perr;
-    if (!parse_options(argc, argv, opt, perr)) {
+    if (std::string err; !parse_options(argc, argv, opt, err)) {
         usage(argv[0]);
-        if (!perr.empty())
-            logx::warn(perr);
+        if (!err.empty()) {
+            logx::warn(err);
+        }
         return 1;
     }
 
@@ -208,11 +231,12 @@ int main(int argc, char** argv) {
 
     Dict dict;
     if (!opt.dict_path.empty()) {
-        if (load_dict(opt.dict_path, dict))
+        if (load_dict(opt.dict_path, dict)) {
             logx::info(
                 "dict loaded: " + std::to_string(dict.tokens.size()));
-        else
+        } else {
             logx::warn("dict empty or load failed");
+        }
     }
 
     auto argv_template = split_cmdline(opt.target);
@@ -220,12 +244,9 @@ int main(int argc, char** argv) {
         logx::warn("empty target");
         return 1;
     }
-    {
-        std::string terr;
-        if (!preflight_target(argv_template, terr)) {
-            logx::warn(terr);
-            return 1; // 配置错误，直接退出
-        }
+    if (std::string terr; !preflight_target(argv_template, terr)) {
+        logx::warn(terr);
+        return 1;
     }
 
     uint64_t global_seed = opt.seed ? opt.seed : seed_from_os();
@@ -241,30 +262,27 @@ int main(int argc, char** argv) {
                 0x5851f42d4c957f2dULL);
             Mutator mut(seed, opt.max_size,
                         dict.tokens.empty() ? nullptr : &dict);
-            Executor exec(ExecConfig{opt.timeout_ms, opt.mem_mb});
+            const Executor exec(ExecConfig{opt.timeout_ms, opt.mem_mb});
             const std::vector<int> allowed(opt.allowed_exits.begin(),
                                            opt.allowed_exits.end());
 
             while (true) {
                 const uint64_t done = shared.iter_done.fetch_add(1);
-                if (static_cast<int64_t>(done) >= opt.iterations)
+                if (static_cast<int64_t>(done) >= opt.iterations) {
                     break;
+                }
 
-                // build input
                 auto base = shared.corpus.pick();
                 std::vector<uint8_t> test;
                 if ((seed + done) % 5 == 0 && shared.corpus.size() >= 2) {
-                    // simple crossover with another random
                     auto other = shared.corpus.pick();
                     test = mut.crossover(base, other);
                 } else {
                     test = mut.mutate(base);
                 }
 
-                // run
                 ExecResult R = exec.run(argv_template, test);
 
-                // analyze
                 CrashInfo C = analyze_and_sig(R.exit_code, R.term_sig,
                                               R.timed_out, R.out, R.err,
                                               allowed);
@@ -280,13 +298,12 @@ int main(int argc, char** argv) {
                     }
                     shared.crashes.fetch_add(1);
                 } else {
-                    // small probability add to corpus
-                    if (((seed + done) & 0xFF) < 3)
+                    if (((seed + done) & 0xFF) < 3) {
                         shared.corpus.add(
                             test);
+                    }
                 }
 
-                // progress
                 if ((done + 1) % 1000 == 0) {
                     logx::info(
                         "iter " + std::to_string(done + 1) + "/" +
@@ -299,8 +316,9 @@ int main(int argc, char** argv) {
         });
     }
 
-    for (auto& th : workers)
+    for (auto& th : workers) {
         th.join();
+    }
 
     logx::info("done. total=" + std::to_string(shared.iter_done.load()) +
         " crashes=" + std::to_string(shared.crashes.load()) +

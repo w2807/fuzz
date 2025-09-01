@@ -20,12 +20,12 @@ struct ExecResult {
 
 class Executor {
 public:
-    explicit Executor(const ExecConfig& c) : cfg(c) {}
+    explicit Executor(const ExecConfig& c) : cfg_(c) {}
     [[nodiscard]] ExecResult run(const std::vector<std::string>& argv_t,
                    const std::vector<uint8_t>& data) const;
 
 private:
-    ExecConfig cfg;
+    ExecConfig cfg_;
 };
 
 #endif //FUZZ_EXECUTOR_H

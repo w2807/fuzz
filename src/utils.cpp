@@ -34,15 +34,23 @@ std::vector<std::string> split_cmdline(const std::string& s) {
                 out.push_back(cur);
                 cur.clear();
             }
-        } else cur.push_back(c);
+        } else {
+            cur.push_back(c);
+        }
     }
-    if (!cur.empty()) out.push_back(cur);
+    if (!cur.empty()) {
+        out.push_back(cur);
+    }
     return out;
 }
 
 std::string join_path(const std::string& a, const std::string& b) {
-    if (a.empty()) return b;
-    if (a.back() == '/') return a + b;
+    if (a.empty()) {
+        return b;
+    }
+    if (a.back() == '/') {
+        return a + b;
+    }
     return a + "/" + b;
 }
 
@@ -50,14 +58,16 @@ std::string now_iso8601() {
     using namespace std::chrono;
     const auto t = system_clock::now();
     const std::time_t tt = system_clock::to_time_t(t);
-    std::tm tm;
+    std::tm tm{};
     localtime_r(&tt, &tm);
     char buf[64];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
-    const auto ms = duration_cast<milliseconds>(t.time_since_epoch()).count() % 1000;
+    const auto ms = duration_cast<milliseconds>(t.time_since_epoch()).count() %
+        1000;
     char buf2[80];
-    std::snprintf(buf2, sizeof(buf2), "%s.%03lld", buf, (long long)ms);
-    return std::string(buf2);
+    std::snprintf(buf2, sizeof(buf2), "%s.%03lld", buf,
+                  static_cast<long long>(ms));
+    return buf2;
 }
 
 uint64_t now_mono_ms() {
@@ -68,7 +78,7 @@ uint64_t now_mono_ms() {
 
 int mktemp_file(std::string& path, const std::string& prefix) {
     path = "/tmp/" + prefix + ".XXXXXX";
-    std::vector<char> buf(path.begin(), path.end());
+    std::vector buf(path.begin(), path.end());
     buf.push_back('\0');
     const int fd = mkstemp(buf.data());
     if (fd >= 0) {
@@ -80,7 +90,7 @@ int mktemp_file(std::string& path, const std::string& prefix) {
 
 uint64_t seed_from_os() {
     std::random_device rd;
-    const uint64_t a = ((uint64_t)rd() << 32) ^ rd();
-    const uint64_t b = ((uint64_t)rd() << 32) ^ rd();
-    return a ^ b ^ (uint64_t)now_mono_ms();
+    const uint64_t a = (static_cast<uint64_t>(rd()) << 32) ^ rd();
+    const uint64_t b = (static_cast<uint64_t>(rd()) << 32) ^ rd();
+    return a ^ b ^ now_mono_ms();
 }
