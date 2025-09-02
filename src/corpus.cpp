@@ -3,16 +3,18 @@
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <thread>
 
 #include "logger.h"
 
-Corpus::Corpus(const size_t max_size_bytes, const size_t max_items) : max_size_bytes_(
-        max_size_bytes), cap_(max_items) {}
+Corpus::Corpus(const size_t max_size_bytes, const size_t max_items) :
+    max_size_bytes_(max_size_bytes), cap_(max_items) {
+}
 
 bool Corpus::load_dir(const std::string& dir) {
     size_t n = 0, skipped = 0;
-    for (std::error_code ec; auto& p :
-         std::filesystem::directory_iterator(dir, ec)) {
+    for (std::error_code ec;
+         auto& p : std::filesystem::directory_iterator(dir, ec)) {
         if (ec) {
             break;
         }
@@ -31,9 +33,8 @@ bool Corpus::load_dir(const std::string& dir) {
         add(b);
         n++;
     }
-    logx::info(
-        "loaded seeds: " + std::to_string(n) + " skipped: " + std::to_string(
-            skipped));
+    logx::info("loaded seeds: " + std::to_string(n) +
+               " skipped: " + std::to_string(skipped));
     if (size() == 0) {
         std::vector<uint8_t> def = {'s', 'e', 'e', 'd'};
         add(def);
@@ -52,8 +53,9 @@ void Corpus::add(const std::vector<uint8_t>& item) {
 std::vector<uint8_t> Corpus::pick() {
     std::lock_guard lk(mu_);
     thread_local std::mt19937_64 rng{
-        0x1234ULL ^ pthread_self()
-    };
+        0x1234ULL ^
+        static_cast<unsigned long long>(
+            std::hash<std::thread::id>{}(std::this_thread::get_id()))};
     std::uniform_int_distribution<size_t> di(0, items_.size() - 1);
     return items_[di(rng)];
 }

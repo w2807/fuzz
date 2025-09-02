@@ -52,7 +52,7 @@ static std::string top_frames(const std::string& combined) {
     constexpr int max_frames = 3;
 
     static const std::regex frame_re(R"(^\s*#\d+\s+.*)");
-    static const char* noise[] = {
+    static const std::string noise[] = {
         "libasan", "__asan", "asan_", "__interceptor", "libc.so", "libstdc++",
         "libgcc", "ld-linux", "linux-vdso", "libpthread", "start_thread"
     };
@@ -67,7 +67,7 @@ static std::string top_frames(const std::string& combined) {
             continue;
         }
         bool is_noise = false;
-        for (const auto n : noise) {
+        for (const auto& n : noise) {
             if (line.find(n) != std::string::npos) {
                 is_noise = true;
                 break;
