@@ -5,11 +5,6 @@
 #include <string>
 #include <vector>
 
-struct ExecConfig {
-    int timeout_ms = 1000;
-    int mem_mb = 0; // 0=unlimited
-};
-
 struct ExecResult {
     int exit_code = 0;
     int term_sig = 0;
@@ -18,11 +13,19 @@ struct ExecResult {
     std::string err;
 };
 
+struct ExecConfig {
+    int timeout_ms = 1000;
+    int mem_mb = 0;
+    const char* cov_shm_name = nullptr; // per-worker coverage SHM name
+};
+
 class Executor {
 public:
-    explicit Executor(const ExecConfig& c) : cfg_(c) {}
+    explicit Executor(ExecConfig cfg) :
+        cfg_(cfg) {}
+
     [[nodiscard]] ExecResult run(const std::vector<std::string>& argv_t,
-                   const std::vector<uint8_t>& data) const;
+                                 const std::vector<uint8_t>& data) const;
 
 private:
     ExecConfig cfg_;

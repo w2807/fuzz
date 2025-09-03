@@ -1,31 +1,112 @@
 #include "mutations.h"
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 
-Mutator::Mutator(const uint64_t seed, const size_t max_size, const Dict* dict)
-    : rng_(seed), max_size_(max_size), dict_(dict) {}
+static const std::vector<std::vector<uint8_t>>& fallback_dict() {
+    static const std::vector<std::vector<uint8_t>> k = [] {
+        std::vector<std::vector<uint8_t>> v;
+        v.emplace_back(std::vector<uint8_t>{'{','}'});
+        v.emplace_back(std::vector<uint8_t>{'[',']'});
+        v.emplace_back(std::vector<uint8_t>{'G','E','T'});
+        v.emplace_back(std::vector<uint8_t>{'P','O','S','T'});
+        return v;
+    }();
+    return k;
+}
+
+Mutator::Mutator(const uint64_t seed, const size_t max_size, const Dict* dict) :
+    rng_(seed), max_size_(max_size), dict_(dict) {}
 
 std::vector<uint8_t> Mutator::mutate(const std::vector<uint8_t>& in) {
     auto cur = in;
-    const int n = static_cast<int>(rng_() % 3) + 1;
+    const int n = static_cast<int>(rng_() % 4) + 1;
     for (int k = 0; k < n; k++) {
-        switch (rng_() % 5) {
-        case 0: cur = flip_bits(cur);
+        switch (rng_() % 9) {
+        case 0:
+            cur = flip_bits(cur);
             break;
-        case 1: cur = insert_bytes(cur);
+        case 1:
+            cur = insert_bytes(cur);
             break;
-        case 2: cur = delete_bytes(cur);
+        case 2:
+            cur = delete_bytes(cur);
             break;
-        case 3: cur = replace_bytes(cur);
+        case 3:
+            cur = replace_bytes(cur);
             break;
-        case 4: cur = insert_dict(cur);
+        case 4:
+        case 8:
+            cur = insert_dict(cur);
             break;
+        case 5: {
+            if (cur.empty()) {
+                cur = {0};
+                break;
+            }
+            auto out = cur;
+            std::uniform_int_distribution<size_t> pos(0, out.size() - 1);
+            const size_t p = pos(rng_);
+            const int delta = static_cast<int>(rng_() % 5) - 2;
+            out[p] = static_cast<uint8_t>(out[p] + delta);
+            cur = out;
+            break;
+        }
+        case 6: {
+            constexpr uint32_t interesting[] = {
+                0x00, 0x01, 0x03, 0x7F, 0x80, 0xFF, 0x100, 0x7FFF, 0x8000,
+                0xFFFF, 0x10000, 0x7FFFFFFF, 0x80000000u, 0xFFFFFFFFu,
+                0xDEADBEEFu
+            };
+            if (cur.empty()) {
+                cur = {0};
+                break;
+            }
+            auto out = cur;
+            std::uniform_int_distribution<size_t> val(
+                0, std::size(interesting) - 1);
+            uint32_t v = interesting[val(rng_)];
+            if (out.size() >= 4 && (rng_() & 1)) {
+                std::uniform_int_distribution<size_t> pos(0, out.size() - 4);
+                const size_t p = pos(rng_);
+                std::memcpy(&out[p], &v, 4);
+            } else if (out.size() >= 2 && (rng_() & 1)) {
+                std::uniform_int_distribution<size_t> pos(0, out.size() - 2);
+                const size_t p = pos(rng_);
+                auto vv = static_cast<uint16_t>(v);
+                std::memcpy(&out[p], &vv, 2);
+            } else {
+                std::uniform_int_distribution<size_t> pos(0, out.size() - 1);
+                const size_t p = pos(rng_);
+                out[p] = static_cast<uint8_t>(v);
+            }
+            cur = out;
+            break;
+        }
+        case 7: {
+            auto out = cur.empty() ? std::vector<uint8_t>{0} : cur;
+            const auto byte = static_cast<uint8_t>(rng_() & 0xFF);
+            const size_t len = std::min<size_t>(out.empty() ? 1 : out.size(),
+                                                rng_() % 16 + 1);
+            std::uniform_int_distribution<size_t> pos(
+                0, !out.empty() ? out.size() - 1 : 0);
+            const size_t p = pos(rng_);
+            for (size_t i = 0; i < len && p + i < out.size(); ++i) {
+                out[p + i] = byte;
+            }
+            cur = out;
+            break;
+        }
         default: ;
         }
     }
     if (cur.size() > max_size_) {
         cur.resize(max_size_);
+    }
+    if (cur.empty()) {
+        // 降低空样本比例
+        cur.push_back(static_cast<uint8_t>(rng_() & 0xFF));
     }
     return cur;
 }
@@ -33,7 +114,7 @@ std::vector<uint8_t> Mutator::mutate(const std::vector<uint8_t>& in) {
 std::vector<uint8_t> Mutator::crossover(const std::vector<uint8_t>& a,
                                         const std::vector<uint8_t>& b) {
     if (a.empty()) {
-        return b;
+        return b.empty() ? std::vector<uint8_t>{static_cast<uint8_t>(rng_() & 0xFF)} : b;
     }
     if (b.empty()) {
         return a;
@@ -46,6 +127,9 @@ std::vector<uint8_t> Mutator::crossover(const std::vector<uint8_t>& a,
     res.insert(res.end(), b.begin() + static_cast<ptrdiff_t>(j), b.end());
     if (res.size() > max_size_) {
         res.resize(max_size_);
+    }
+    if (res.empty()) {
+        res.push_back(static_cast<uint8_t>(rng_() & 0xFF));
     }
     return res;
 }
@@ -90,11 +174,12 @@ std::vector<uint8_t> Mutator::delete_bytes(const std::vector<uint8_t>& d) {
     auto out = d;
     std::uniform_int_distribution<size_t> start(0, out.size() - 1);
     const size_t s = start(rng_);
-    const size_t len = (size_t)((rng_() % std::min<size_t>(16, out.size() - s))
-        +
-        1);
+    const size_t len = rng_() % std::min<size_t>(16, out.size() - s) + 1;
     out.erase(out.begin() + static_cast<ptrdiff_t>(s),
               out.begin() + static_cast<ptrdiff_t>(s + len));
+    if (out.empty()) {
+        out.push_back(static_cast<uint8_t>(rng_() & 0xFF));
+    }
     return out;
 }
 
@@ -113,12 +198,15 @@ std::vector<uint8_t> Mutator::replace_bytes(const std::vector<uint8_t>& d) {
 
 std::vector<uint8_t> Mutator::insert_dict(const std::vector<uint8_t>& d) {
     auto out = d;
-    if (!dict_ || dict_->tokens.empty()) {
-        return insert_bytes(d);
+    const std::vector<std::vector<uint8_t>>* src = nullptr;
+    if (dict_ && !dict_->tokens.empty()) {
+        src = &dict_->tokens;
+    } else {
+        src = &fallback_dict();
     }
-    const auto idx = rng_() % dict_->tokens.size();
+    const auto idx = rng_() % src->size();
     std::uniform_int_distribution<size_t> pos(0, out.size());
-    const auto& tok = dict_->tokens[idx];
+    const auto& tok = (*src)[idx];
     out.insert(out.begin() + static_cast<ptrdiff_t>(pos(rng_)), tok.begin(),
                tok.end());
     if (out.size() > max_size_) {

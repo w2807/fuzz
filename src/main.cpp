@@ -9,6 +9,7 @@
 #include <unordered_set>
 
 #include "corpus.h"
+#include "coverage.h"
 #include "crash.h"
 #include "executor.h"
 #include "logger.h"
@@ -128,12 +129,18 @@ struct Shared {
     Corpus corpus;
     std::unordered_set<std::string> seen;
     std::mutex seen_mu;
-    std::atomic<uint64_t> iter_done{0};
-    std::atomic<uint64_t> crashes{0};
-    std::atomic<uint64_t> saved{0};
+    std::atomic<uint64_t> iter_done = 0;
+    std::atomic<uint64_t> crashes = 0;
+    std::atomic<uint64_t> saved = 0;
+    std::atomic<uint64_t> new_cov_inputs = 0;
+
+    // 全局覆盖去重（AFL 风格）：仅首次看到的边计入全局
+    std::vector<uint8_t> global_cov;
+    std::mutex cov_mu;
 
     explicit Shared(const size_t max_size) :
-        corpus(max_size) {}
+        corpus(max_size),
+        global_cov(kCoverageSize, 0) {}
 };
 
 static void save_crash(const std::string& out_dir, uint64_t id,
@@ -239,7 +246,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    auto argv_template = split_cmdline(opt.target);
+    const auto argv_template = split_cmdline(opt.target);
     if (argv_template.empty()) {
         logx::warn("empty target");
         return 1;
@@ -249,22 +256,33 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    uint64_t global_seed = opt.seed ? opt.seed : seed_from_os();
+    const uint64_t global_seed = opt.seed ? opt.seed : seed_from_os();
     logx::info("seed: " + std::to_string(global_seed));
 
     std::atomic<uint64_t> crash_id{0};
     std::vector<std::thread> workers;
 
+    workers.reserve(opt.threads);
     for (int t = 0; t < opt.threads; t++) {
         workers.emplace_back([&, t] {
+            Coverage cov;
+            if (!cov.setup()) {
+                logx::warn("failed to setup coverage (worker)");
+                return;
+            }
+
             const uint64_t seed = global_seed ^ (0x9e3779b97f4a7c15ULL +
                 static_cast<uint64_t>(t) *
                 0x5851f42d4c957f2dULL);
             Mutator mut(seed, opt.max_size,
                         dict.tokens.empty() ? nullptr : &dict);
-            const Executor exec(ExecConfig{opt.timeout_ms, opt.mem_mb});
-            const std::vector<int> allowed(opt.allowed_exits.begin(),
-                                           opt.allowed_exits.end());
+            const Executor exec(ExecConfig{opt.timeout_ms, opt.mem_mb,
+                                           cov.shm_name().c_str()});
+            const std::vector allowed(opt.allowed_exits.begin(),
+                                      opt.allowed_exits.end());
+
+            std::vector<uint8_t> base_cache;
+            int energy_left = 0;
 
             while (true) {
                 const uint64_t done = shared.iter_done.fetch_add(1);
@@ -272,14 +290,21 @@ int main(int argc, char** argv) {
                     break;
                 }
 
-                auto base = shared.corpus.pick();
-                std::vector<uint8_t> test;
-                if ((seed + done) % 5 == 0 && shared.corpus.size() >= 2) {
-                    auto other = shared.corpus.pick();
-                    test = mut.crossover(base, other);
-                } else {
-                    test = mut.mutate(base);
+                if (energy_left <= 0 || base_cache.empty()) {
+                    base_cache = shared.corpus.pick();
+                    energy_left = 16 + static_cast<int>((seed + done) & 7);
                 }
+
+                std::vector<uint8_t> test;
+                if (((seed + done) % 5 == 0) && shared.corpus.size() >= 2) {
+                    auto other = shared.corpus.pick();
+                    test = mut.crossover(base_cache, other);
+                } else {
+                    test = mut.mutate(base_cache);
+                }
+                energy_left--;
+
+                cov.reset();
 
                 ExecResult R = exec.run(argv_template, test);
 
@@ -287,7 +312,7 @@ int main(int argc, char** argv) {
                                               R.timed_out, R.out, R.err,
                                               allowed);
                 if (C.crashed) {
-                    std::lock_guard<std::mutex> lk(shared.seen_mu);
+                    std::lock_guard lk(shared.seen_mu);
                     if (shared.seen.insert(C.signature).second) {
                         const uint64_t id = crash_id.fetch_add(1);
                         save_crash(opt.out_dir, id, test, R, C);
@@ -298,9 +323,40 @@ int main(int argc, char** argv) {
                     }
                     shared.crashes.fetch_add(1);
                 } else {
-                    if (((seed + done) & 0xFF) < 3) {
-                        shared.corpus.add(
-                            test);
+                    std::vector<uint32_t> edges;
+                    const size_t local_new = cov.collect_new_edges(&edges);
+                    if (local_new > 0) {
+                        size_t real_new = 0;
+                        {
+                            std::lock_guard lk(shared.cov_mu);
+                            for (uint32_t e : edges) {
+                                if (!shared.global_cov[e]) {
+                                    shared.global_cov[e] = 1;
+                                    real_new++;
+                                }
+                            }
+                        }
+                        if (real_new > 0) {
+                            cov.merge();
+
+                            const uint64_t base_score = real_new * 64;
+                            const uint64_t penalty = (!test.empty())
+                                ? (test.size() / 64 + 1)
+                                : 1;
+                            const uint32_t score = static_cast<uint32_t>(std::max<
+                                uint64_t>(1, base_score / penalty));
+
+                            shared.corpus.add(test, score);
+                            shared.new_cov_inputs.fetch_add(1);
+                        } else {
+                            if (((seed + done) & 0x7FF) == 0) {
+                                shared.corpus.add(test, 1);
+                            }
+                        }
+                    } else {
+                        if (((seed + done) & 0x7FF) == 0) {
+                            shared.corpus.add(test, 1);
+                        }
                     }
                 }
 
@@ -310,7 +366,8 @@ int main(int argc, char** argv) {
                         std::to_string(opt.iterations) +
                         " crashes=" + std::to_string(shared.crashes.load()) +
                         " saved=" + std::to_string(shared.saved.load()) +
-                        " seeds=" + std::to_string(shared.corpus.size()));
+                        " seeds=" + std::to_string(shared.corpus.size()) +
+                        " cov=" + std::to_string(shared.new_cov_inputs.load()));
                 }
             }
         });
@@ -322,6 +379,7 @@ int main(int argc, char** argv) {
 
     logx::info("done. total=" + std::to_string(shared.iter_done.load()) +
         " crashes=" + std::to_string(shared.crashes.load()) +
-        " saved=" + std::to_string(shared.saved.load()));
+        " saved=" + std::to_string(shared.saved.load()) +
+        " cov=" + std::to_string(shared.new_cov_inputs.load()));
     return 0;
 }

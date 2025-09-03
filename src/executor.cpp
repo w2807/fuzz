@@ -13,34 +13,35 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 
+#include "coverage.h"
 #include "logger.h"
 #include "utils.h"
 
 namespace {
-    int set_nonblock(const int fd) {
-        const int f = fcntl(fd, F_GETFL, 0);
-        return fcntl(fd, F_SETFL, f | O_NONBLOCK);
-    }
+int set_nonblock(const int fd) {
+    const int f = fcntl(fd, F_GETFL, 0);
+    return fcntl(fd, F_SETFL, f | O_NONBLOCK);
+}
 
-    void set_rlimits(const int mem_mb) {
-        if (mem_mb > 0) {
-            rlimit rl{};
-            rl.rlim_cur = rl.rlim_max = static_cast<rlim_t>(mem_mb) * 1024ull *
-                1024ull;
-            setrlimit(RLIMIT_AS, &rl);
-        }
-        rlimit fz{};
-        fz.rlim_cur = fz.rlim_max = 64ull * 1024ull * 1024ull;
-        setrlimit(RLIMIT_FSIZE, &fz);
+void set_rlimits(const int mem_mb) {
+    if (mem_mb > 0) {
+        rlimit rl{};
+        rl.rlim_cur = rl.rlim_max = static_cast<rlim_t>(mem_mb) * 1024ull *
+            1024ull;
+        setrlimit(RLIMIT_AS, &rl);
     }
+    rlimit fz{};
+    fz.rlim_cur = fz.rlim_max = 64ull * 1024ull * 1024ull;
+    setrlimit(RLIMIT_FSIZE, &fz);
+}
 
-    void ignore_sigpipe() {
-        struct sigaction sa{};
-        sa.sa_handler = SIG_IGN;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = 0;
-        sigaction(SIGPIPE, &sa, nullptr);
-    }
+void ignore_sigpipe() {
+    struct sigaction sa{};
+    sa.sa_handler = SIG_IGN;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGPIPE, &sa, nullptr);
+}
 } // namespace
 
 ExecResult Executor::run(const std::vector<std::string>& argv_t,
@@ -188,6 +189,10 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
         set_rlimits(cfg_.mem_mb);
 
+        if (cfg_.cov_shm_name && *cfg_.cov_shm_name) {
+            setenv(kCoverageVar, cfg_.cov_shm_name, 1);
+        }
+
         std::vector<char*> av;
         av.reserve(args.size() + 1);
         for (auto& s : args) {
@@ -207,7 +212,8 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
     set_nonblock(out_pipe[0]);
     set_nonblock(err_pipe[0]);
 
-    if (!use_stdin) {
+    // 关键修复：空输入时立刻关闭写端，向目标发送 EOF，避免阻塞超时
+    if (use_stdin && data.empty() && in_pipe[1] != -1) {
         close(in_pipe[1]);
         in_pipe[1] = -1;
     }
@@ -252,7 +258,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
         if (use_stdin && in_pipe[1] != -1 && in_off < data.size()) {
             ssize_t w = write(in_pipe[1], data.data() + in_off,
-                                data.size() - in_off);
+                              data.size() - in_off);
             if (w > 0) {
                 in_off += static_cast<size_t>(w);
             }
@@ -268,8 +274,10 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
         int st = 0;
         if (pid_t wp = waitpid(pid, &st, WNOHANG); wp == pid) {
-            if (WIFEXITED(st)) R.exit_code = WEXITSTATUS(st);
-            if (WIFSIGNALED(st)) R.term_sig = WTERMSIG(st);
+            if (WIFEXITED(st))
+                R.exit_code = WEXITSTATUS(st);
+            if (WIFSIGNALED(st))
+                R.term_sig = WTERMSIG(st);
             drain(out_pipe[0], outS);
             drain(err_pipe[0], errS);
             break;

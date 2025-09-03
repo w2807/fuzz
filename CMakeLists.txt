@@ -9,12 +9,17 @@ add_executable(fuzz src/main.cpp
         src/executor.cpp
         src/mutations.cpp
         src/corpus.cpp
-        src/crash.cpp)
+        src/crash.cpp
+        src/coverage.cpp)
 
 target_include_directories(fuzz PRIVATE include)
 target_compile_options(fuzz PRIVATE -Wall -Wextra -Wpedantic -Werror -O1)
 
-add_executable(target target.c)
+add_executable(target target.c
+        cov_runtime.c)
 
-target_compile_options(target PRIVATE -fsanitize=address -fno-omit-frame-pointer -O1 -g)
+target_compile_options(target PRIVATE
+        -fsanitize=address
+        -fsanitize-coverage=trace-pc-guard,trace-cmp
+        -fno-omit-frame-pointer -O1 -g)
 target_link_options(target PRIVATE -fsanitize=address)
