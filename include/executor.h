@@ -16,16 +16,16 @@ struct ExecResult {
 struct ExecConfig {
     int timeout_ms = 1000;
     int mem_mb = 0;
-    const char* cov_shm_name = nullptr; // per-worker coverage SHM name
+    const char* cov_shm_name = nullptr;
 };
 
 class Executor {
 public:
-    explicit Executor(ExecConfig cfg) :
-        cfg_(cfg) {}
+    explicit Executor(const ExecConfig cfg) : cfg_(cfg) {}
 
-    [[nodiscard]] ExecResult run(const std::vector<std::string>& argv_t,
-                                 const std::vector<uint8_t>& data) const;
+    [[nodiscard]] ExecResult run(
+        const std::vector<std::string>& argv_t,
+        const std::vector<uint8_t>& data) const;
 
 private:
     ExecConfig cfg_;

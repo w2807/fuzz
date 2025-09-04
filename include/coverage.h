@@ -2,10 +2,10 @@
 #define FUZZ_COVERAGE_H
 
 #include <cstdint>
-#include <vector>
 #include <string>
+#include <vector>
 
-constexpr size_t kCoverageSize = 1 << 16;
+constexpr size_t kCoverageSize = 1 << 17;
 constexpr char kCoverageVar[] = "__FUZZ_SHARE";
 
 class Coverage {

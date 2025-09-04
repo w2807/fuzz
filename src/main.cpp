@@ -27,7 +27,7 @@ static void usage(const char* prog) {
                  "  --max-size N          max testcase bytes (default 4096)\n"
                  "  --dict path           dictionary file\n"
                  "  --seed N              rng seed (default random)\n"
-                 "  --allowed-exits CSV   e.g. 1,2,3 treated as non-crash\n",
+                 "  --allowed-exits       e.g. 1,2,3 treated as non-crash\n",
                  prog);
 }
 
@@ -100,8 +100,9 @@ bool parse_options(const int argc, char** argv, Options& o, std::string& err) {
             size_t pos = 0;
             while (pos < v.size()) {
                 const size_t c = v.find(',', pos);
-                std::string tok = v.substr(
-                    pos, c == std::string::npos ? v.size() - pos : c - pos);
+                std::string tok = v.substr(pos, c == std::string::npos
+                                                    ? v.size() - pos
+                                                    : c - pos);
                 if (!tok.empty()) {
                     o.allowed_exits.insert(std::stoi(tok));
                 }
@@ -133,19 +134,16 @@ struct Shared {
     std::atomic<uint64_t> crashes = 0;
     std::atomic<uint64_t> saved = 0;
     std::atomic<uint64_t> new_cov_inputs = 0;
-
-    // 全局覆盖去重（AFL 风格）：仅首次看到的边计入全局
     std::vector<uint8_t> global_cov;
     std::mutex cov_mu;
 
-    explicit Shared(const size_t max_size) :
-        corpus(max_size),
-        global_cov(kCoverageSize, 0) {}
+    explicit Shared(const size_t max_size) : corpus(max_size),
+                                             global_cov(kCoverageSize, 0) {}
 };
 
-static void save_crash(const std::string& out_dir, uint64_t id,
-                       const std::vector<uint8_t>& buf,
-                       const ExecResult& R, const CrashInfo& C) {
+static void save_crash(
+    const std::string& out_dir, uint64_t id, const std::vector<uint8_t>& buf,
+    const ExecResult& R, const CrashInfo& C) {
     std::filesystem::create_directories(out_dir);
     std::string base = "crash-" + std::to_string(id);
     std::string bin = join_path(out_dir, base + ".bin");
@@ -168,8 +166,8 @@ static void save_crash(const std::string& out_dir, uint64_t id,
     mf << "stdout:\n" << R.out << "\n--- stderr ---\n" << R.err << "\n";
 }
 
-static bool preflight_target(const std::vector<std::string>& argv_t,
-                             std::string& err) {
+static bool preflight_target(
+    const std::vector<std::string>& argv_t, std::string& err) {
     if (argv_t.empty()) {
         err = "empty target";
         return false;
@@ -182,8 +180,8 @@ static bool preflight_target(const std::vector<std::string>& argv_t,
 
     if (exe.find('/') != std::string::npos) {
         if (!is_exec(exe)) {
-            err = "target not executable: " + exe + " (" + std::string(
-                std::strerror(errno)) + ")";
+            err = "target not executable: " + exe + " (" +
+                std::string(std::strerror(errno)) + ")";
             return false;
         }
     } else {
@@ -197,9 +195,10 @@ static bool preflight_target(const std::vector<std::string>& argv_t,
         bool found = false;
         while (pos <= p.size()) {
             const size_t sep = p.find(':', pos);
-            std::string dir = p.substr(
-                pos, sep == std::string::npos ? p.size() - pos : sep - pos);
-            if (!dir.empty()) {
+            if (std::string dir = p.substr(pos, sep == std::string::npos
+                                                    ? p.size() - pos
+                                                    : sep - pos); !dir.
+                empty()) {
                 if (std::string full = join_path(dir, exe); is_exec(full)) {
                     found = true;
                     break;
@@ -239,8 +238,7 @@ int main(int argc, char** argv) {
     Dict dict;
     if (!opt.dict_path.empty()) {
         if (load_dict(opt.dict_path, dict)) {
-            logx::info(
-                "dict loaded: " + std::to_string(dict.tokens.size()));
+            logx::info("dict loaded: " + std::to_string(dict.tokens.size()));
         } else {
             logx::warn("dict empty or load failed");
         }
@@ -270,17 +268,16 @@ int main(int argc, char** argv) {
                 logx::warn("failed to setup coverage (worker)");
                 return;
             }
-
-            const uint64_t seed = global_seed ^ (0x9e3779b97f4a7c15ULL +
-                static_cast<uint64_t>(t) *
-                0x5851f42d4c957f2dULL);
+            const uint64_t seed = global_seed ^ 0x9e3779b97f4a7c15ULL +
+                static_cast<uint64_t>(t) * 0x5851f42d4c957f2dULL;
             Mutator mut(seed, opt.max_size,
                         dict.tokens.empty() ? nullptr : &dict);
-            const Executor exec(ExecConfig{opt.timeout_ms, opt.mem_mb,
-                                           cov.shm_name().c_str()});
+            const Executor exec(ExecConfig{
+                                    opt.timeout_ms, opt.mem_mb,
+                                    cov.shm_name().c_str()
+                                });
             const std::vector allowed(opt.allowed_exits.begin(),
                                       opt.allowed_exits.end());
-
             std::vector<uint8_t> base_cache;
             int energy_left = 0;
 
@@ -289,25 +286,20 @@ int main(int argc, char** argv) {
                 if (static_cast<int64_t>(done) >= opt.iterations) {
                     break;
                 }
-
                 if (energy_left <= 0 || base_cache.empty()) {
                     base_cache = shared.corpus.pick();
-                    energy_left = 16 + static_cast<int>((seed + done) & 7);
+                    energy_left = 16 + static_cast<int>(seed + done & 7);
                 }
-
                 std::vector<uint8_t> test;
-                if (((seed + done) % 5 == 0) && shared.corpus.size() >= 2) {
+                if ((seed + done) % 5 == 0 && shared.corpus.size() >= 2) {
                     auto other = shared.corpus.pick();
                     test = mut.crossover(base_cache, other);
                 } else {
                     test = mut.mutate(base_cache);
                 }
                 energy_left--;
-
                 cov.reset();
-
                 ExecResult R = exec.run(argv_template, test);
-
                 CrashInfo C = analyze_and_sig(R.exit_code, R.term_sig,
                                               R.timed_out, R.out, R.err,
                                               allowed);
@@ -317,15 +309,14 @@ int main(int argc, char** argv) {
                         const uint64_t id = crash_id.fetch_add(1);
                         save_crash(opt.out_dir, id, test, R, C);
                         shared.saved.fetch_add(1);
-                        logx::good(
-                            "new crash sig=" + C.signature + " id=" +
-                            std::to_string(id) + " reason=" + C.reason);
+                        logx::good("new crash sig=" + C.signature + " id=" +
+                                   std::to_string(id) + " reason=" + C.reason);
                     }
                     shared.crashes.fetch_add(1);
                 } else {
                     std::vector<uint32_t> edges;
-                    const size_t local_new = cov.collect_new_edges(&edges);
-                    if (local_new > 0) {
+                    if (const size_t local_new = cov.collect_new_edges(&edges);
+                        local_new > 0) {
                         size_t real_new = 0;
                         {
                             std::lock_guard lk(shared.cov_mu);
@@ -338,36 +329,32 @@ int main(int argc, char** argv) {
                         }
                         if (real_new > 0) {
                             cov.merge();
-
                             const uint64_t base_score = real_new * 64;
-                            const uint64_t penalty = (!test.empty())
-                                ? (test.size() / 64 + 1)
+                            const uint64_t penalty = !test.empty()
+                                ? test.size() / 64 + 1
                                 : 1;
-                            const uint32_t score = static_cast<uint32_t>(std::max<
-                                uint64_t>(1, base_score / penalty));
-
+                            const uint32_t score = static_cast<uint32_t>(
+                                std::max<uint64_t>(1, base_score / penalty));
                             shared.corpus.add(test, score);
                             shared.new_cov_inputs.fetch_add(1);
                         } else {
-                            if (((seed + done) & 0x7FF) == 0) {
+                            if ((seed + done & 0x7FF) == 0) {
                                 shared.corpus.add(test, 1);
                             }
                         }
                     } else {
-                        if (((seed + done) & 0x7FF) == 0) {
+                        if ((seed + done & 0x7FF) == 0) {
                             shared.corpus.add(test, 1);
                         }
                     }
                 }
-
                 if ((done + 1) % 1000 == 0) {
-                    logx::info(
-                        "iter " + std::to_string(done + 1) + "/" +
-                        std::to_string(opt.iterations) +
-                        " crashes=" + std::to_string(shared.crashes.load()) +
-                        " saved=" + std::to_string(shared.saved.load()) +
-                        " seeds=" + std::to_string(shared.corpus.size()) +
-                        " cov=" + std::to_string(shared.new_cov_inputs.load()));
+                    logx::info("iter " + std::to_string(done + 1) + "/" +
+                               std::to_string(opt.iterations) + " crashes=" +
+                               std::to_string(shared.crashes.load()) + " saved="
+                               + std::to_string(shared.saved.load()) + " seeds="
+                               + std::to_string(shared.corpus.size()) + " cov="
+                               + std::to_string(shared.new_cov_inputs.load()));
                 }
             }
         });
@@ -378,8 +365,8 @@ int main(int argc, char** argv) {
     }
 
     logx::info("done. total=" + std::to_string(shared.iter_done.load()) +
-        " crashes=" + std::to_string(shared.crashes.load()) +
-        " saved=" + std::to_string(shared.saved.load()) +
-        " cov=" + std::to_string(shared.new_cov_inputs.load()));
+               " crashes=" + std::to_string(shared.crashes.load()) + " saved=" +
+               std::to_string(shared.saved.load()) + " cov=" +
+               std::to_string(shared.new_cov_inputs.load()));
     return 0;
 }

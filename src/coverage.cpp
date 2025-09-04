@@ -10,8 +10,7 @@
 
 #include "logger.h"
 
-Coverage::Coverage() :
-    total_coverage_(kCoverageSize, 0) {}
+Coverage::Coverage() : total_coverage_(kCoverageSize, 0) {}
 
 Coverage::~Coverage() {
     if (shm_map_) {
@@ -45,9 +44,9 @@ bool Coverage::setup() {
         return false;
     }
 
-    shm_map_ = static_cast<uint8_t*>(
-        mmap(nullptr, kCoverageSize, PROT_READ | PROT_WRITE, MAP_SHARED,
-             shm_id_, 0));
+    shm_map_ = static_cast<uint8_t*>(mmap(nullptr, kCoverageSize,
+                                          PROT_READ | PROT_WRITE, MAP_SHARED,
+                                          shm_id_, 0));
 
     if (shm_map_ == MAP_FAILED) {
         logx::warn("mmap failed");
@@ -56,7 +55,6 @@ bool Coverage::setup() {
         return false;
     }
 
-    // 不在父进程全局 setenv；由 Executor 在子进程里设置
     return true;
 }
 
@@ -90,8 +88,9 @@ void Coverage::merge() {
 }
 
 size_t Coverage::collect_new_edges(std::vector<uint32_t>* out_edges) const {
-    if (!shm_map_)
+    if (!shm_map_) {
         return 0;
+    }
     size_t cnt = 0;
     for (size_t i = 0; i < kCoverageSize; ++i) {
         if (shm_map_[i] && !total_coverage_[i]) {

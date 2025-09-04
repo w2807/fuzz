@@ -90,7 +90,7 @@ int mktemp_file(std::string& path, const std::string& prefix) {
 
 uint64_t seed_from_os() {
     std::random_device rd;
-    const uint64_t a = (static_cast<uint64_t>(rd()) << 32) ^ rd();
-    const uint64_t b = (static_cast<uint64_t>(rd()) << 32) ^ rd();
+    const uint64_t a = static_cast<uint64_t>(rd()) << 32 ^ rd();
+    const uint64_t b = static_cast<uint64_t>(rd()) << 32 ^ rd();
     return a ^ b ^ now_mono_ms();
 }

@@ -14,8 +14,8 @@ class Mutator {
 public:
     Mutator(uint64_t seed, size_t max_size, const Dict* dict = nullptr);
     std::vector<uint8_t> mutate(const std::vector<uint8_t>& in);
-    std::vector<uint8_t> crossover(const std::vector<uint8_t>& a,
-                                   const std::vector<uint8_t>& b);
+    std::vector<uint8_t> crossover(
+        const std::vector<uint8_t>& a, const std::vector<uint8_t>& b);
 
 private:
     std::mt19937_64 rng_;

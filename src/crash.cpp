@@ -26,35 +26,15 @@ static std::string normalize_crash(const std::string& s) {
     t = std::regex_replace(t, std::regex("\\b[0-9a-fA-F]{8,}\\b"), "HEX");
     t = std::regex_replace(t, std::regex("\\b(pc|sp|bp|ip)\\s+0x[0-9a-fA-F]+"),
                            "$1 0xX");
-    t = std::regex_replace(t, std::regex(":(\\d+)(?=\\b)"), ":*");
     return trim(t);
-}
-
-static std::string basename(const std::string& path) {
-    const size_t p = path.find_last_of("/\\");
-    return p == std::string::npos ? path : path.substr(p + 1);
-}
-
-static std::string normalize_line(const std::string& line) {
-    std::string norm = normalize_crash(line);
-    if (const size_t sp = norm.find_last_of(' '); sp != std::string::npos) {
-        std::string tail = norm.substr(sp + 1);
-        if (const size_t colon = tail.find(':'); colon != std::string::npos) {
-            tail = basename(tail.substr(0, colon)) + ":*";
-            norm.resize(sp + 1);
-            norm.append(tail);
-        }
-    }
-    return trim(norm);
 }
 
 static std::string top_frames(const std::string& combined) {
     constexpr int max_frames = 3;
-
     static const std::regex frame_re(R"(^\s*#\d+\s+.*)");
     static const std::string noise[] = {
-        "libasan", "__asan", "asan_", "__interceptor", "libc.so", "libstdc++",
-        "libgcc", "ld-linux", "linux-vdso", "libpthread", "start_thread"
+        "libasan", "libc.so", "libstdc++", "libgcc", "ld-linux", "linux-vdso",
+        "libpthread", "start_thread"
     };
 
     std::istringstream iss(combined);
@@ -76,7 +56,7 @@ static std::string top_frames(const std::string& combined) {
         if (is_noise) {
             continue;
         }
-        if (std::string norm = normalize_line(line); !norm.empty()) {
+        if (std::string norm = normalize_crash(line); !norm.empty()) {
             frames.push_back(norm);
             if (frames.size() >= max_frames) {
                 break;
@@ -104,7 +84,8 @@ static std::string asan_kind(const std::string& asan_first_line) {
     return normalize_crash(trim(kind));
 }
 
-static std::string first_line(const std::string& hay, const std::string& needle) {
+static std::string first_line(
+    const std::string& hay, const std::string& needle) {
     const size_t pos = hay.find(needle);
     if (pos == std::string::npos) {
         return "";
@@ -115,9 +96,9 @@ static std::string first_line(const std::string& hay, const std::string& needle)
                                     : eol - pos));
 }
 
-CrashInfo analyze_and_sig(int exit_code, int term_sig, bool timed_out,
-                          const std::string& out, const std::string& err,
-                          const std::vector<int>& allowed_exits) {
+CrashInfo analyze_and_sig(
+    int exit_code, int term_sig, bool timed_out, const std::string& out,
+    const std::string& err, const std::vector<int>& allowed_exits) {
     CrashInfo ci;
     const std::string comb = out + "\n" + err;
 
@@ -129,8 +110,8 @@ CrashInfo analyze_and_sig(int exit_code, int term_sig, bool timed_out,
     }
 
     const std::string asan_err = first_line(comb, "ERROR: AddressSanitizer:");
-    const std::string asan_deadly = first_line(
-        comb, "AddressSanitizer:DEADLYSIGNAL");
+    const std::string asan_deadly =
+        first_line(comb, "AddressSanitizer:DEADLYSIGNAL");
     const bool has_asan = !asan_err.empty() || !asan_deadly.empty();
     const bool is_allowed_exit = std::ranges::find(allowed_exits, exit_code) !=
         allowed_exits.end();

@@ -13,7 +13,7 @@ add_executable(fuzz src/main.cpp
         src/coverage.cpp)
 
 target_include_directories(fuzz PRIVATE include)
-target_compile_options(fuzz PRIVATE -Wall -Wextra -Wpedantic -Werror -O1)
+target_compile_options(fuzz PRIVATE -Wall -Wextra -Wpedantic -Werror -O2)
 
 add_executable(target target.c
         cov_runtime.c)

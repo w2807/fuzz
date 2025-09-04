@@ -44,8 +44,9 @@ void ignore_sigpipe() {
 }
 } // namespace
 
-ExecResult Executor::run(const std::vector<std::string>& argv_t,
-                         const std::vector<uint8_t>& data) const {
+ExecResult Executor::run(
+    const std::vector<std::string>& argv_t,
+    const std::vector<uint8_t>& data) const {
     ExecResult R;
 
     ignore_sigpipe();
@@ -61,7 +62,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
     }
 
     if (!need_file && !use_stdin) {
-        need_file = true;
+        use_stdin = true;
     }
 
     std::vector<std::string> args;
@@ -167,6 +168,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
     if (pid == 0) {
         setsid();
+        (void)setpgid(0, 0);
 
         if (use_stdin) {
             dup2(in_pipe[0], STDIN_FILENO);
@@ -212,7 +214,6 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
     set_nonblock(out_pipe[0]);
     set_nonblock(err_pipe[0]);
 
-    // 关键修复：空输入时立刻关闭写端，向目标发送 EOF，避免阻塞超时
     if (use_stdin && data.empty() && in_pipe[1] != -1) {
         close(in_pipe[1]);
         in_pipe[1] = -1;
@@ -224,7 +225,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
     auto drain = [](const int fd, std::string& dst) {
         char buf[8192];
-        for (;;) {
+        while (true) {
             const ssize_t r = read(fd, buf, sizeof(buf));
             if (r > 0) {
                 dst.append(buf, buf + r);
@@ -237,7 +238,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
         }
     };
 
-    for (;;) {
+    while (true) {
         pollfd pfds[3];
         int nfds = 0;
         if (in_pipe[1] != -1) {
@@ -274,10 +275,12 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
         int st = 0;
         if (pid_t wp = waitpid(pid, &st, WNOHANG); wp == pid) {
-            if (WIFEXITED(st))
+            if (WIFEXITED(st)) {
                 R.exit_code = WEXITSTATUS(st);
-            if (WIFSIGNALED(st))
+            }
+            if (WIFSIGNALED(st)) {
                 R.term_sig = WTERMSIG(st);
+            }
             drain(out_pipe[0], outS);
             drain(err_pipe[0], errS);
             break;
@@ -285,7 +288,7 @@ ExecResult Executor::run(const std::vector<std::string>& argv_t,
 
         if (static_cast<int>(now_mono_ms() - start) >= cfg_.timeout_ms) {
             R.timed_out = true;
-            kill(pid, SIGKILL);
+            kill(-pid, SIGKILL);
             waitpid(pid, nullptr, 0);
             break;
         }

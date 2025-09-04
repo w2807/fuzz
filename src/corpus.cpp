@@ -33,9 +33,8 @@ bool Corpus::load_dir(const std::string& dir) {
         add(b, 1);
         n++;
     }
-    logx::info(
-        "loaded seeds: " + std::to_string(n) + " skipped: " + std::to_string(
-            skipped));
+    logx::info("loaded seeds: " + std::to_string(n) + " skipped: " +
+               std::to_string(skipped));
     if (size() == 0) {
         std::vector<uint8_t> def = {'s', 'e', 'e', 'd'};
         add(def, 1);
@@ -66,9 +65,8 @@ std::vector<uint8_t> Corpus::pick() {
     }
 
     thread_local std::mt19937_64 rng{
-        0x1234ULL ^
-        static_cast<unsigned long long>(
-            std::hash<std::thread::id>{}(std::this_thread::get_id()))
+        0x1234ULL ^ static_cast<unsigned long long>(std::hash<std::thread::id>
+            {}(std::this_thread::get_id()))
     };
 
     long double total_w = 0.0L;

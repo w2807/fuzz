@@ -10,8 +10,8 @@ struct CrashInfo {
     std::string reason;
 };
 
-CrashInfo analyze_and_sig(int exit_code, int term_sig, bool timed_out,
-                          const std::string& out, const std::string& err,
-                          const std::vector<int>& allowed_exits);
+CrashInfo analyze_and_sig(
+    int exit_code, int term_sig, bool timed_out, const std::string& out,
+    const std::string& err, const std::vector<int>& allowed_exits);
 
 #endif //FUZZ_CRASH_H

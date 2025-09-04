@@ -14,7 +14,7 @@ struct Options {
     int threads = 1;
     int timeout_ms = 1000;
     int mem_mb = 0; // 0 = unlimited
-    size_t max_size = 4096;
+    size_t max_size = 8192;
     uint64_t seed = 0; // 0 = random
 };
 

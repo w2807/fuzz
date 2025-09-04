@@ -3,14 +3,17 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <climits>
 
 static const std::vector<std::vector<uint8_t>>& fallback_dict() {
     static const std::vector<std::vector<uint8_t>> k = [] {
         std::vector<std::vector<uint8_t>> v;
-        v.emplace_back(std::vector<uint8_t>{'{','}'});
-        v.emplace_back(std::vector<uint8_t>{'[',']'});
-        v.emplace_back(std::vector<uint8_t>{'G','E','T'});
-        v.emplace_back(std::vector<uint8_t>{'P','O','S','T'});
+        v.emplace_back(std::vector<uint8_t>{'{', '}'});
+        v.emplace_back(std::vector<uint8_t>{'[', ']'});
+        v.emplace_back(std::vector<uint8_t>{'G', 'E', 'T'});
+        v.emplace_back(std::vector<uint8_t>{'S', 'E', 'T'});
+        v.emplace_back(std::vector<uint8_t>{'P', 'O', 'S', 'T'});
+        v.emplace_back(std::vector<uint8_t>{'%', 'n'});
         return v;
     }();
     return k;
@@ -55,17 +58,15 @@ std::vector<uint8_t> Mutator::mutate(const std::vector<uint8_t>& in) {
         }
         case 6: {
             constexpr uint32_t interesting[] = {
-                0x00, 0x01, 0x03, 0x7F, 0x80, 0xFF, 0x100, 0x7FFF, 0x8000,
-                0xFFFF, 0x10000, 0x7FFFFFFF, 0x80000000u, 0xFFFFFFFFu,
-                0xDEADBEEFu
+                0x00, 0x01, INT_MAX, 0xDEADBEEFu
             };
             if (cur.empty()) {
                 cur = {0};
                 break;
             }
             auto out = cur;
-            std::uniform_int_distribution<size_t> val(
-                0, std::size(interesting) - 1);
+            std::uniform_int_distribution<size_t>
+                val(0, std::size(interesting) - 1);
             uint32_t v = interesting[val(rng_)];
             if (out.size() >= 4 && (rng_() & 1)) {
                 std::uniform_int_distribution<size_t> pos(0, out.size() - 4);
@@ -89,8 +90,9 @@ std::vector<uint8_t> Mutator::mutate(const std::vector<uint8_t>& in) {
             const auto byte = static_cast<uint8_t>(rng_() & 0xFF);
             const size_t len = std::min<size_t>(out.empty() ? 1 : out.size(),
                                                 rng_() % 16 + 1);
-            std::uniform_int_distribution<size_t> pos(
-                0, !out.empty() ? out.size() - 1 : 0);
+            std::uniform_int_distribution<size_t> pos(0, !out.empty()
+                ? out.size() - 1
+                : 0);
             const size_t p = pos(rng_);
             for (size_t i = 0; i < len && p + i < out.size(); ++i) {
                 out[p + i] = byte;
@@ -105,16 +107,15 @@ std::vector<uint8_t> Mutator::mutate(const std::vector<uint8_t>& in) {
         cur.resize(max_size_);
     }
     if (cur.empty()) {
-        // 降低空样本比例
         cur.push_back(static_cast<uint8_t>(rng_() & 0xFF));
     }
     return cur;
 }
 
-std::vector<uint8_t> Mutator::crossover(const std::vector<uint8_t>& a,
-                                        const std::vector<uint8_t>& b) {
+std::vector<uint8_t> Mutator::crossover(
+    const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
     if (a.empty()) {
-        return b.empty() ? std::vector<uint8_t>{static_cast<uint8_t>(rng_() & 0xFF)} : b;
+        return b.empty() ? std::vector{static_cast<uint8_t>(rng_() & 0xFF)} : b;
     }
     if (b.empty()) {
         return a;
@@ -149,14 +150,14 @@ std::vector<uint8_t> Mutator::flip_bits(const std::vector<uint8_t>& d) {
     auto out = d;
     std::uniform_int_distribution<size_t> di(0, out.size() - 1);
     const size_t idx = di(rng_);
-    std::uniform_int_distribution<int> bit(0, 7);
-    out[idx] ^= (1u << bit(rng_));
+    std::uniform_int_distribution bit(0, 7);
+    out[idx] ^= 1u << bit(rng_);
     return out;
 }
 
 std::vector<uint8_t> Mutator::insert_bytes(const std::vector<uint8_t>& d) {
     auto out = d;
-    const auto ins = (size_t)(rng_() % 32 + 1);
+    const auto ins = (rng_() % 32 + 1);
     auto r = rand_bytes(ins);
     std::uniform_int_distribution<size_t> pos(0, out.size());
     out.insert(out.begin() + static_cast<ptrdiff_t>(pos(rng_)), r.begin(),
