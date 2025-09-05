@@ -213,6 +213,9 @@ ExecResult Executor::run(
 
     set_nonblock(out_pipe[0]);
     set_nonblock(err_pipe[0]);
+    if (use_stdin && in_pipe[1] != -1) {
+        set_nonblock(in_pipe[1]);
+    }
 
     if (use_stdin && data.empty() && in_pipe[1] != -1) {
         close(in_pipe[1]);

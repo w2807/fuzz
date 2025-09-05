@@ -20,6 +20,7 @@ add_executable(target target.c
 
 target_compile_options(target PRIVATE
         -fsanitize=address
+        -fno-sanitize-recover=all
         -fsanitize-coverage=trace-pc-guard,trace-cmp
         -fno-omit-frame-pointer -O1 -g)
 target_link_options(target PRIVATE -fsanitize=address)
