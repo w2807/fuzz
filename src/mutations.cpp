@@ -13,7 +13,7 @@ static const std::vector<std::vector<uint8_t>>& fallback_dict() {
         v.emplace_back(std::vector<uint8_t>{'G', 'E', 'T'});
         v.emplace_back(std::vector<uint8_t>{'S', 'E', 'T'});
         v.emplace_back(std::vector<uint8_t>{'P', 'O', 'S', 'T'});
-        v.emplace_back(std::vector<uint8_t>{'%', 'n'});
+        v.emplace_back(std::vector<uint8_t>{'%', 'x', '%', 'n'});
         return v;
     }();
     return k;
