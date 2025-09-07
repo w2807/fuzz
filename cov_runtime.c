@@ -52,24 +52,3 @@ void __sanitizer_cov_trace_pc_guard_init(uint32_t* start,
         }
     }
 }
-
-static void cov_hit(uintptr_t h) {
-    if (cov_area_ptr) {
-        cov_area_ptr[h & (COV_MAP_SIZE - 1)]++;
-    }
-}
-
-#define DEF_CMP(N, T) \
-void __sanitizer_cov_trace_cmp##N(T a, T b) { \
-    uintptr_t h = (uintptr_t)a ^ (uintptr_t)b ^ ((uintptr_t)cov_prev_loc << 1) ^ ((uintptr_t)N << 24); \
-    cov_hit(h); \
-} \
-void __sanitizer_cov_trace_const_cmp##N(T a, T b) { \
-    uintptr_t h = (uintptr_t)a ^ (uintptr_t)b ^ ((uintptr_t)cov_prev_loc << 2) ^ ((uintptr_t)N << 25); \
-    cov_hit(h); \
-}
-
-DEF_CMP(1, uint8_t)
-DEF_CMP(2, uint16_t)
-DEF_CMP(4, uint32_t)
-DEF_CMP(8, uint64_t)

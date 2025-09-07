@@ -13,6 +13,7 @@ public:
     void add(const std::vector<uint8_t>& item, uint32_t score = 1);
     std::vector<uint8_t> pick();
     size_t size() const;
+    std::vector<std::vector<uint8_t>> get_all_items() const;
 
 private:
     struct Entry {

@@ -101,3 +101,13 @@ size_t Corpus::size() const {
     std::lock_guard lk(mu_);
     return items_.size();
 }
+
+std::vector<std::vector<uint8_t>> Corpus::get_all_items() const {
+    std::lock_guard lk(mu_);
+    std::vector<std::vector<uint8_t>> all_data;
+    all_data.reserve(items_.size());
+    for (const auto& entry : items_) {
+        all_data.push_back(entry.data);
+    }
+    return all_data;
+}
