@@ -38,7 +38,7 @@ void __sanitizer_cov_trace_pc_guard(const uint32_t* guard) {
     uintptr_t edge_index = (uintptr_t)cov_prev_loc ^ (uintptr_t)guard_id;
     uintptr_t idx = edge_index & (COV_MAP_SIZE - 1);
     cov_area_ptr[idx]++;
-    cov_prev_loc = guard_id;
+    cov_prev_loc = guard_id >> 1;
 }
 
 void __sanitizer_cov_trace_pc_guard_init(uint32_t* start,
